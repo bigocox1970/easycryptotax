@@ -14,7 +14,215 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      price_history: {
+        Row: {
+          created_at: string | null
+          date: string
+          id: string
+          price_usd: number | null
+          source: string | null
+          symbol: string
+        }
+        Insert: {
+          created_at?: string | null
+          date: string
+          id?: string
+          price_usd?: number | null
+          source?: string | null
+          symbol: string
+        }
+        Update: {
+          created_at?: string | null
+          date?: string
+          id?: string
+          price_usd?: number | null
+          source?: string | null
+          symbol?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          accounting_method: string | null
+          created_at: string | null
+          email: string | null
+          id: string
+          subscription_tier: string | null
+          tax_jurisdiction: string | null
+        }
+        Insert: {
+          accounting_method?: string | null
+          created_at?: string | null
+          email?: string | null
+          id: string
+          subscription_tier?: string | null
+          tax_jurisdiction?: string | null
+        }
+        Update: {
+          accounting_method?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          subscription_tier?: string | null
+          tax_jurisdiction?: string | null
+        }
+        Relationships: []
+      }
+      tax_events: {
+        Row: {
+          asset: string
+          buy_transaction_id: string | null
+          cost_basis: number | null
+          created_at: string | null
+          gain_loss: number | null
+          holding_period_days: number | null
+          id: string
+          is_long_term: boolean | null
+          quantity_sold: number | null
+          sale_price: number | null
+          sell_transaction_id: string | null
+          tax_year: number | null
+          user_id: string | null
+        }
+        Insert: {
+          asset: string
+          buy_transaction_id?: string | null
+          cost_basis?: number | null
+          created_at?: string | null
+          gain_loss?: number | null
+          holding_period_days?: number | null
+          id?: string
+          is_long_term?: boolean | null
+          quantity_sold?: number | null
+          sale_price?: number | null
+          sell_transaction_id?: string | null
+          tax_year?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          asset?: string
+          buy_transaction_id?: string | null
+          cost_basis?: number | null
+          created_at?: string | null
+          gain_loss?: number | null
+          holding_period_days?: number | null
+          id?: string
+          is_long_term?: boolean | null
+          quantity_sold?: number | null
+          sale_price?: number | null
+          sell_transaction_id?: string | null
+          tax_year?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tax_events_buy_transaction_id_fkey"
+            columns: ["buy_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tax_events_sell_transaction_id_fkey"
+            columns: ["sell_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transactions: {
+        Row: {
+          base_asset: string
+          created_at: string | null
+          exchange_name: string | null
+          fee: number | null
+          fee_asset: string | null
+          file_id: string | null
+          id: string
+          price: number | null
+          quantity: number
+          quote_asset: string | null
+          raw_data: Json | null
+          transaction_date: string
+          transaction_type: string
+          user_id: string | null
+        }
+        Insert: {
+          base_asset: string
+          created_at?: string | null
+          exchange_name?: string | null
+          fee?: number | null
+          fee_asset?: string | null
+          file_id?: string | null
+          id?: string
+          price?: number | null
+          quantity: number
+          quote_asset?: string | null
+          raw_data?: Json | null
+          transaction_date: string
+          transaction_type: string
+          user_id?: string | null
+        }
+        Update: {
+          base_asset?: string
+          created_at?: string | null
+          exchange_name?: string | null
+          fee?: number | null
+          fee_asset?: string | null
+          file_id?: string | null
+          id?: string
+          price?: number | null
+          quantity?: number
+          quote_asset?: string | null
+          raw_data?: Json | null
+          transaction_date?: string
+          transaction_type?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: false
+            referencedRelation: "uploaded_files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      uploaded_files: {
+        Row: {
+          exchange_name: string | null
+          file_size: number | null
+          filename: string
+          id: string
+          processing_status: string | null
+          supabase_file_path: string | null
+          upload_date: string | null
+          user_id: string | null
+        }
+        Insert: {
+          exchange_name?: string | null
+          file_size?: number | null
+          filename: string
+          id?: string
+          processing_status?: string | null
+          supabase_file_path?: string | null
+          upload_date?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          exchange_name?: string | null
+          file_size?: number | null
+          filename?: string
+          id?: string
+          processing_status?: string | null
+          supabase_file_path?: string | null
+          upload_date?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
