@@ -11,6 +11,7 @@ import UploadPage from "./pages/UploadPage";
 import TransactionsPage from "./pages/TransactionsPage";
 import TaxReportPage from "./pages/TaxReportPage";
 import SettingsPage from "./pages/SettingsPage";
+import TaxDataTestPage from "./pages/TaxDataTestPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const AppRoutes = () => {
       <Route path="/transactions" element={<TransactionsPage />} />
       <Route path="/tax-report" element={<TaxReportPage />} />
       <Route path="/settings" element={<SettingsPage />} />
+      <Route path="/test-tax-data" element={<TaxDataTestPage />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
