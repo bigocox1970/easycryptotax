@@ -2,18 +2,22 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, TrendingUp, TrendingDown, DollarSign, Calendar, FileText } from 'lucide-react';
-import { TaxEvent, Transaction } from '@/types/transaction';
+import { Download, TrendingUp, TrendingDown, DollarSign, Calendar, FileText, Calculator, BarChart3 } from 'lucide-react';
+import { TaxEvent, Transaction, Profile } from '@/types/transaction';
+import { getTaxRates, calculateTax } from '@/lib/tax-rates';
+import InfoTooltip from '@/components/ui/info-tooltip';
 
 const TaxReportPage = () => {
   const { user } = useAuth();
   const [taxEvents, setTaxEvents] = useState<TaxEvent[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [calculating, setCalculating] = useState(false);
@@ -37,8 +41,16 @@ const TaxReportPage = () => {
           .eq('user_id', user.id)
           .eq('tax_year', parseInt(selectedYear));
 
+        // Fetch user profile
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
         setTransactions(transactionData || []);
         setTaxEvents(taxEventData || []);
+        setProfile(profileData as Profile);
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -55,17 +67,44 @@ const TaxReportPage = () => {
     setCalculating(true);
     
     try {
-      // Simple FIFO calculation
+      console.log('Starting tax calculation for year:', selectedYear);
+      console.log('Total transactions:', transactions.length);
+      
+      // Filter transactions for the selected year
+      const yearTransactions = transactions.filter(t => 
+        new Date(t.transaction_date).getFullYear() === parseInt(selectedYear)
+      );
+      
+      console.log('Transactions for year:', yearTransactions.length);
+      
+      // Get all buy transactions (including from previous years for cost basis)
       const buyTransactions = transactions
-        .filter(t => t.transaction_type === 'buy' && t.price && t.quantity)
+        .filter(t => t.transaction_type === 'buy' && t.quantity > 0)
         .sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
       
-      const sellTransactions = transactions
-        .filter(t => t.transaction_type === 'sell' && t.price && t.quantity)
-        .filter(t => new Date(t.transaction_date).getFullYear() === parseInt(selectedYear))
-        .sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
+             // Get sell transactions for the selected year (exclude fiat withdrawals like GBP)
+       const sellTransactions = transactions
+         .filter(t => t.transaction_type === 'sell' && t.quantity > 0)
+         .filter(t => new Date(t.transaction_date).getFullYear() === parseInt(selectedYear))
+         .filter(t => !['GBP', 'USD', 'EUR'].includes(t.base_asset?.toUpperCase())) // Exclude fiat currencies
+         .sort((a, b) => new Date(a.transaction_date).getTime() - new Date(b.transaction_date).getTime());
 
-      const newTaxEvents: any[] = [];
+             console.log('Buy transactions:', buyTransactions.length);
+       console.log('Sell transactions for year:', sellTransactions.length);
+       
+       // Debug: Show what sell transactions we have
+       const allSellTransactions = transactions
+         .filter(t => t.transaction_type === 'sell' && t.quantity > 0)
+         .filter(t => new Date(t.transaction_date).getFullYear() === parseInt(selectedYear));
+       
+       console.log('All sell transactions for year:', allSellTransactions.map(t => ({
+         date: t.transaction_date,
+         asset: t.base_asset,
+         quantity: t.quantity,
+         price: t.price
+       })));
+
+      const newTaxEvents: Omit<TaxEvent, 'id' | 'created_at'>[] = [];
       const holdings: { [asset: string]: { quantity: number; costBasis: number; transactions: Transaction[] } } = {};
 
       // Build holdings from buy transactions
@@ -74,28 +113,62 @@ const TaxReportPage = () => {
           holdings[buyTx.base_asset] = { quantity: 0, costBasis: 0, transactions: [] };
         }
         
+        // For Coinbase UK format, price might be calculated from Amount_GBP / Amount_Crypto
         const cost = (buyTx.price || 0) * buyTx.quantity;
         holdings[buyTx.base_asset].quantity += buyTx.quantity;
         holdings[buyTx.base_asset].costBasis += cost;
         holdings[buyTx.base_asset].transactions.push(buyTx);
+        
+        console.log(`Added ${buyTx.quantity} ${buyTx.base_asset} at cost ${cost}`);
       }
 
-      // Process sell transactions
+      console.log('Holdings before sells:', holdings);
+
+      // Process sell transactions using FIFO
       for (const sellTx of sellTransactions) {
-        if (!holdings[sellTx.base_asset] || holdings[sellTx.base_asset].quantity <= 0) continue;
+        if (!holdings[sellTx.base_asset] || holdings[sellTx.base_asset].quantity <= 0) {
+          console.log(`No holdings for ${sellTx.base_asset}, skipping sell`);
+          continue;
+        }
 
         const holding = holdings[sellTx.base_asset];
         const sellQuantity = Math.min(sellTx.quantity, holding.quantity);
-        const avgCostPerUnit = holding.costBasis / holding.quantity;
-        const costBasis = avgCostPerUnit * sellQuantity;
+        
+        // Use FIFO: match against oldest buy transactions first
+        let remainingToSell = sellQuantity;
+        let totalCostBasis = 0;
+        let oldestBuyDate = new Date();
+        
+        // Process FIFO matching
+        for (let i = 0; i < holding.transactions.length && remainingToSell > 0; i++) {
+          const buyTx = holding.transactions[i];
+          const availableQuantity = buyTx.quantity;
+          const quantityToUse = Math.min(remainingToSell, availableQuantity);
+          
+          const costPerUnit = (buyTx.price || 0);
+          const costBasisForThisLot = costPerUnit * quantityToUse;
+          
+          totalCostBasis += costBasisForThisLot;
+          remainingToSell -= quantityToUse;
+          
+          // Track the oldest buy date for holding period calculation
+          const buyDate = new Date(buyTx.transaction_date);
+          if (buyDate < oldestBuyDate) {
+            oldestBuyDate = buyDate;
+          }
+          
+          console.log(`Matched ${quantityToUse} ${sellTx.base_asset} from buy on ${buyTx.transaction_date} at cost ${costBasisForThisLot}`);
+        }
+        
         const salePrice = (sellTx.price || 0) * sellQuantity;
-        const gainLoss = salePrice - costBasis;
-
-        // Calculate holding period (simplified)
+        const gainLoss = salePrice - totalCostBasis;
+        
+        // Calculate holding period
         const sellDate = new Date(sellTx.transaction_date);
-        const oldestBuyDate = new Date(holding.transactions[0]?.transaction_date || sellTx.transaction_date);
         const holdingPeriodDays = Math.floor((sellDate.getTime() - oldestBuyDate.getTime()) / (1000 * 60 * 60 * 24));
         const isLongTerm = holdingPeriodDays > 365;
+
+        console.log(`Sell: ${sellQuantity} ${sellTx.base_asset} for ${salePrice}, cost basis: ${totalCostBasis}, gain/loss: ${gainLoss}`);
 
         newTaxEvents.push({
           user_id: user.id,
@@ -103,7 +176,7 @@ const TaxReportPage = () => {
           buy_transaction_id: holding.transactions[0]?.id,
           asset: sellTx.base_asset,
           quantity_sold: sellQuantity,
-          cost_basis: costBasis,
+          cost_basis: totalCostBasis,
           sale_price: salePrice,
           gain_loss: gainLoss,
           holding_period_days: holdingPeriodDays,
@@ -113,9 +186,11 @@ const TaxReportPage = () => {
 
         // Update holdings
         holding.quantity -= sellQuantity;
-        holding.costBasis -= costBasis;
+        holding.costBasis -= totalCostBasis;
       }
 
+      console.log('Generated tax events:', newTaxEvents.length);
+      
       // Clear existing tax events for the year and insert new ones
       await supabase
         .from('tax_events')
@@ -124,9 +199,20 @@ const TaxReportPage = () => {
         .eq('tax_year', parseInt(selectedYear));
 
       if (newTaxEvents.length > 0) {
-        await supabase
+        console.log('Inserting tax events into database...');
+        const { data: insertData, error: insertError } = await supabase
           .from('tax_events')
-          .insert(newTaxEvents);
+          .insert(newTaxEvents)
+          .select();
+          
+        if (insertError) {
+          console.error('Error inserting tax events:', insertError);
+          throw insertError;
+        }
+        
+        console.log('Successfully inserted tax events:', insertData?.length || 0);
+      } else {
+        console.log('No tax events to insert');
       }
 
       // Refresh tax events
@@ -144,6 +230,9 @@ const TaxReportPage = () => {
     }
   };
 
+  const jurisdiction = profile?.tax_jurisdiction || 'UK';
+  const taxRates = getTaxRates(jurisdiction);
+  
   const summary = {
     totalGainLoss: taxEvents.reduce((sum, event) => sum + (event.gain_loss || 0), 0),
     shortTermGains: taxEvents.filter(e => !e.is_long_term).reduce((sum, event) => sum + Math.max(0, event.gain_loss || 0), 0),
@@ -151,13 +240,26 @@ const TaxReportPage = () => {
     longTermGains: taxEvents.filter(e => e.is_long_term).reduce((sum, event) => sum + Math.max(0, event.gain_loss || 0), 0),
     longTermLosses: taxEvents.filter(e => e.is_long_term).reduce((sum, event) => sum + Math.min(0, event.gain_loss || 0), 0),
   };
+  
+  // Calculate tax liability
+  const totalGains = summary.shortTermGains + summary.longTermGains;
+  const totalLosses = summary.shortTermLosses + summary.longTermLosses;
+  const netGainLoss = totalGains + totalLosses;
+  
+  const shortTermTax = calculateTax(summary.shortTermGains, false, jurisdiction);
+  const longTermTax = calculateTax(summary.longTermGains, true, jurisdiction);
+  const totalTax = shortTermTax + longTermTax;
 
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+    // Get user's preferred currency from profile
+    const currency = profile?.currency_preference || 'GBP';
+    const locale = currency === 'GBP' ? 'en-GB' : 'en-US';
+    
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: 'USD',
+      currency: currency,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(amount);
@@ -200,6 +302,26 @@ const TaxReportPage = () => {
               </Button>
             </div>
           </div>
+          
+          {/* Tax Rates Info */}
+          <div className="mt-4 p-4 bg-muted rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold">Tax Rates ({jurisdiction}):</h3>
+              <InfoTooltip content={`Current tax rates for ${jurisdiction}. Short-term gains are taxed at a higher rate than long-term gains. The annual allowance is the amount you can earn tax-free before capital gains tax applies.`} />
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p><strong>Short-term rate:</strong> {(taxRates.shortTermRate * 100).toFixed(1)}%</p>
+                <p><strong>Long-term rate:</strong> {(taxRates.longTermRate * 100).toFixed(1)}%</p>
+                <p><strong>Annual allowance:</strong> {formatCurrency(taxRates.allowance)}</p>
+              </div>
+              <div>
+                <p><strong>Currency:</strong> {taxRates.currency}</p>
+                <p><strong>Jurisdiction:</strong> {taxRates.jurisdiction}</p>
+                <p><strong>Total tax events:</strong> {taxEvents.length}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Summary Cards */}
@@ -207,7 +329,10 @@ const TaxReportPage = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Gain/Loss</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Total capital gains and losses from all crypto sales in the selected tax year. This is the net result of all your taxable events." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${summary.totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -219,7 +344,10 @@ const TaxReportPage = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Short-Term Net</CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Net gains/losses from crypto held for 1 year or less. Short-term gains are typically taxed at a higher rate than long-term gains." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${(summary.shortTermGains + summary.shortTermLosses) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -234,7 +362,10 @@ const TaxReportPage = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Long-Term Net</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Net gains/losses from crypto held for more than 1 year. Long-term gains often qualify for lower tax rates in many jurisdictions." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${(summary.longTermGains + summary.longTermLosses) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -249,12 +380,33 @@ const TaxReportPage = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Tax Events</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Number of taxable events (crypto sales) in the selected tax year. Each sale of crypto creates a taxable event that must be reported." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{taxEvents.length}</div>
               <p className="text-xs text-muted-foreground">
                 Taxable transactions
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Estimated Tax</CardTitle>
+              <div className="flex items-center space-x-1">
+                <Calculator className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Estimated tax liability based on your gains and the current tax rates for your jurisdiction. This is an estimate and should be verified with a tax professional." />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {formatCurrency(totalTax)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {jurisdiction} rates applied
               </p>
             </CardContent>
           </Card>
@@ -264,7 +416,10 @@ const TaxReportPage = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <Card>
             <CardHeader>
-              <CardTitle>Short-Term Capital Gains/Losses</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Short-Term Capital Gains/Losses</CardTitle>
+                <InfoTooltip content="Gains and losses from crypto held for 1 year or less. These are typically taxed at higher rates and may have different reporting requirements." />
+              </div>
               <CardDescription>Holdings ≤ 1 year</CardDescription>
             </CardHeader>
             <CardContent>
@@ -291,7 +446,10 @@ const TaxReportPage = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Long-Term Capital Gains/Losses</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Long-Term Capital Gains/Losses</CardTitle>
+                <InfoTooltip content="Gains and losses from crypto held for more than 1 year. These often qualify for lower tax rates and may have different treatment in tax calculations." />
+              </div>
               <CardDescription>Holdings &gt; 1 year</CardDescription>
             </CardHeader>
             <CardContent>
@@ -336,10 +494,21 @@ const TaxReportPage = () => {
           <CardContent>
             {loading ? (
               <div className="text-center py-8">Loading tax events...</div>
-            ) : taxEvents.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No tax events calculated. Click "Calculate Tax Events" to generate your report.
-              </div>
+                         ) : taxEvents.length === 0 ? (
+               <div className="text-center py-8 text-muted-foreground">
+                 <p>No tax events calculated for {selectedYear}.</p>
+                 <p className="text-sm mt-2">
+                   This could mean:
+                 </p>
+                 <ul className="text-sm mt-1 text-left max-w-md mx-auto">
+                   <li>• No crypto sales occurred in {selectedYear}</li>
+                   <li>• Only fiat withdrawals (GBP/USD) which aren't taxable events</li>
+                   <li>• All transactions were buys (purchases)</li>
+                 </ul>
+                 <p className="text-sm mt-2">
+                   Click "Calculate Tax Events" to generate your report.
+                 </p>
+               </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -387,6 +556,7 @@ const TaxReportPage = () => {
           </CardContent>
         </Card>
       </div>
+      <Footer />
     </div>
   );
 };

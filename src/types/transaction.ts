@@ -48,5 +48,7 @@ export interface Profile {
   subscription_tier: 'free' | 'premium';
   tax_jurisdiction: string;
   accounting_method: 'FIFO' | 'LIFO' | 'Specific ID';
+  primary_exchange?: string;
+  currency_preference?: string;
   created_at: string;
 }

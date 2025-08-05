@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, Filter, Download, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 import { Transaction } from '@/types/transaction';
+import InfoTooltip from '@/components/ui/info-tooltip';
 
 const TransactionsPage = () => {
   const { user } = useAuth();
@@ -113,7 +115,10 @@ const TransactionsPage = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Total number of cryptocurrency transactions imported from your exchange files. This includes all transaction types: buys, sells, deposits, and withdrawals." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{filteredTransactions.length.toLocaleString()}</div>
@@ -123,7 +128,10 @@ const TransactionsPage = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Buy Orders</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-500" />
+              <div className="flex items-center space-x-1">
+                <TrendingUp className="h-4 w-4 text-green-500" />
+                <InfoTooltip content="Number of buy transactions where you purchased cryptocurrency. These are not taxable events but are used to calculate cost basis for future sales." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">{buyTransactions}</div>
@@ -133,7 +141,10 @@ const TransactionsPage = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Sell Orders</CardTitle>
-              <TrendingDown className="h-4 w-4 text-red-500" />
+              <div className="flex items-center space-x-1">
+                <TrendingDown className="h-4 w-4 text-red-500" />
+                <InfoTooltip content="Number of sell transactions where you sold cryptocurrency. These are taxable events that create capital gains or losses for tax reporting." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">{sellTransactions}</div>
@@ -262,6 +273,7 @@ const TransactionsPage = () => {
           </CardContent>
         </Card>
       </div>
+      <Footer />
     </div>
   );
 };

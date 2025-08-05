@@ -3,8 +3,10 @@ CREATE TABLE public.profiles (
   id UUID REFERENCES auth.users ON DELETE CASCADE,
   email TEXT,
   subscription_tier TEXT DEFAULT 'free',
-  tax_jurisdiction TEXT DEFAULT 'US',
+  tax_jurisdiction TEXT DEFAULT 'UK',
   accounting_method TEXT DEFAULT 'FIFO',
+  primary_exchange TEXT DEFAULT 'coinbase',
+  currency_preference TEXT DEFAULT 'GBP',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   PRIMARY KEY (id)
 );

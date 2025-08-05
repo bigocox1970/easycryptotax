@@ -7,6 +7,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { Link } from 'react-router-dom';
 import { FileText, TrendingUp, DollarSign, Calendar, Upload, BarChart3 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
+import InfoTooltip from '@/components/ui/info-tooltip';
 
 interface DashboardStats {
   totalTransactions: number;
@@ -92,7 +94,10 @@ const Dashboard = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Total number of cryptocurrency transactions imported from your exchange files. This includes buys, sells, deposits, and withdrawals." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{loading ? '...' : stats.totalTransactions.toLocaleString()}</div>
@@ -105,7 +110,10 @@ const Dashboard = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Uploaded Files</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Number of CSV/Excel files you've uploaded from your cryptocurrency exchanges. Files are processed to extract transaction data." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{loading ? '...' : stats.totalFiles}</div>
@@ -118,7 +126,10 @@ const Dashboard = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Gain/Loss</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Total capital gains and losses calculated from your crypto sales. Positive values indicate gains, negative values indicate losses." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className={`text-2xl font-bold ${stats.totalGainLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -133,7 +144,10 @@ const Dashboard = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Tax Year</CardTitle>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center space-x-1">
+                <Calendar className="h-4 w-4 text-muted-foreground" />
+                <InfoTooltip content="Current tax year for calculations. Tax years typically run from April to April in the UK, or January to December in other jurisdictions." />
+              </div>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{currentYear}</div>
@@ -148,7 +162,10 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card>
             <CardHeader>
-              <CardTitle>Upload Transactions</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Upload Transactions</CardTitle>
+                <InfoTooltip content="Upload CSV files exported from your cryptocurrency exchanges. Supported formats include Binance, Coinbase Pro, Bybit, and others." />
+              </div>
               <CardDescription>
                 Upload CSV files from your cryptocurrency exchanges
               </CardDescription>
@@ -165,7 +182,10 @@ const Dashboard = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Generate Tax Report</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Generate Tax Report</CardTitle>
+                <InfoTooltip content="Generate detailed tax reports with capital gains calculations, tax liability estimates, and downloadable forms for your tax return." />
+              </div>
               <CardDescription>
                 Create detailed tax reports and forms
               </CardDescription>
@@ -185,7 +205,10 @@ const Dashboard = () => {
         {stats.pendingFiles > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>File Processing Status</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>File Processing Status</CardTitle>
+                <InfoTooltip content="Shows the progress of file processing. Large files or complex formats may take longer to process. You'll be notified when processing is complete." />
+              </div>
               <CardDescription>
                 {stats.pendingFiles} file(s) are still being processed
               </CardDescription>
@@ -205,9 +228,12 @@ const Dashboard = () => {
         {stats.totalTransactions === 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Getting Started</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Getting Started</CardTitle>
+                <InfoTooltip content="Follow these steps to calculate your crypto taxes. Start by uploading your transaction files, then review and generate your tax report." />
+              </div>
               <CardDescription>
-                Welcome to CryptoTax Pro! Here's how to get started:
+                Welcome to EasyCryptoTax! Here's how to get started:
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -250,6 +276,7 @@ const Dashboard = () => {
           </Card>
         )}
       </div>
+      <Footer />
     </div>
   );
 };

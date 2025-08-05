@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import Navbar from '@/components/layout/Navbar';
+import Footer from '@/components/layout/Footer';
 import FileUploader from '@/components/upload/FileUploader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, FileText, AlertCircle } from 'lucide-react';
+import InfoTooltip from '@/components/ui/info-tooltip';
 
 const UploadPage = () => {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -72,113 +74,97 @@ const UploadPage = () => {
       <Navbar />
       
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Upload Transaction Files</h1>
-          <p className="text-muted-foreground">
-            Import your cryptocurrency transaction history from various exchanges
-          </p>
-        </div>
+                 <div className="mb-8">
+           <h1 className="text-3xl font-bold mb-2">Upload Transaction Files</h1>
+           <p className="text-muted-foreground">
+             Import your cryptocurrency transaction history from various exchanges. 
+             Supported exchanges: Binance, Coinbase Pro, Bybit, and more.
+           </p>
+         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <FileUploader onFilesProcessed={handleFilesProcessed} />
-          </div>
+                 <div className="space-y-8">
+          {/* Main Upload Area */}
+          <FileUploader onFilesProcessed={handleFilesProcessed} />
 
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Supported Exchanges</CardTitle>
-                <CardDescription>
-                  File format compatibility for major exchanges
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {exchangeFormats.map((exchange) => (
-                    <div key={exchange.name} className="flex items-start space-x-3">
-                      {getStatusIcon(exchange.status)}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-medium">{exchange.name}</span>
-                          {getStatusBadge(exchange.status)}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {exchange.description}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
+          {/* Export Instructions */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
                 <CardTitle>Export Instructions</CardTitle>
-                <CardDescription>
-                  How to export transaction data from your exchange
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4 text-sm">
-                  <div>
-                    <h4 className="font-medium mb-2">Binance</h4>
-                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                      <li>Go to Wallet → Transaction History</li>
-                      <li>Select date range</li>
-                      <li>Click "Export" → CSV</li>
-                    </ol>
-                  </div>
-                  
-                  <div>
-                    <h4 className="font-medium mb-2">Coinbase Pro</h4>
-                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                      <li>Go to Portfolio → Statements</li>
-                      <li>Select "Transaction History"</li>
-                      <li>Choose date range and download CSV</li>
-                    </ol>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium mb-2">Bybit</h4>
-                    <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                      <li>Go to Assets → Transaction History</li>
-                      <li>Select "Trade History"</li>
-                      <li>Export as CSV</li>
-                    </ol>
-                  </div>
+                <InfoTooltip content="Step-by-step instructions for exporting transaction data from popular cryptocurrency exchanges. Follow these steps to get the correct file format for upload." />
+              </div>
+                        <CardDescription>
+            How to export transaction data from your exchange. Don't worry about date formats - we automatically detect them! 
+            <a href="/exchange-export-formats.md" target="_blank" className="text-primary hover:underline ml-1">
+              View detailed guide →
+            </a>
+          </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <h4 className="font-medium mb-3">Binance</h4>
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                    <li>Go to Wallet → Transaction History</li>
+                    <li>Select date range</li>
+                    <li>Click "Export" → CSV</li>
+                  </ol>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>File Requirements</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span>CSV, XLS, or XLSX format</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span>Maximum 10MB file size</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span>Headers in first row</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                    <span>Dates in YYYY-MM-DD format</span>
-                  </div>
+                
+                <div>
+                  <h4 className="font-medium mb-3">Coinbase Pro</h4>
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                    <li>Go to Portfolio → Statements</li>
+                    <li>Select "Transaction History"</li>
+                    <li>Choose date range and download CSV</li>
+                  </ol>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
+
+                <div>
+                  <h4 className="font-medium mb-3">Bybit</h4>
+                  <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                    <li>Go to Assets → Transaction History</li>
+                    <li>Select "Trade History"</li>
+                    <li>Export as CSV</li>
+                  </ol>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Supported Exchanges */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Supported Exchanges</CardTitle>
+                <InfoTooltip content="List of cryptocurrency exchanges with automatic file format support. Fully supported exchanges have automatic column mapping, while others may require manual configuration." />
+              </div>
+                             <CardDescription>
+                 Automatic format detection and column mapping
+               </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {exchangeFormats.map((exchange) => (
+                  <div key={exchange.name} className="flex items-start space-x-3 p-3 border rounded-lg">
+                    {getStatusIcon(exchange.status)}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium">{exchange.name}</span>
+                        {getStatusBadge(exchange.status)}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {exchange.description}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
+      <Footer />
     </div>
   );
 };
