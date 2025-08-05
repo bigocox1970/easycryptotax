@@ -12,6 +12,7 @@ import { Download, TrendingUp, TrendingDown, DollarSign, Calendar, FileText, Cal
 import { TaxEvent, Transaction, Profile } from '@/types/transaction';
 import { getTaxRates, calculateTax } from '@/lib/tax-rates';
 import InfoTooltip from '@/components/ui/info-tooltip';
+import TaxRatesDisplay from '@/components/tax/TaxRatesDisplay';
 
 const TaxReportPage = () => {
   const { user } = useAuth();
@@ -303,24 +304,13 @@ const TaxReportPage = () => {
             </div>
           </div>
           
-          {/* Tax Rates Info */}
-          <div className="mt-4 p-4 bg-muted rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold">Tax Rates ({jurisdiction}):</h3>
-              <InfoTooltip content={`Current tax rates for ${jurisdiction}. Short-term gains are taxed at a higher rate than long-term gains. The annual allowance is the amount you can earn tax-free before capital gains tax applies.`} />
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p><strong>Short-term rate:</strong> {(taxRates.shortTermRate * 100).toFixed(1)}%</p>
-                <p><strong>Long-term rate:</strong> {(taxRates.longTermRate * 100).toFixed(1)}%</p>
-                <p><strong>Annual allowance:</strong> {formatCurrency(taxRates.allowance)}</p>
-              </div>
-              <div>
-                <p><strong>Currency:</strong> {taxRates.currency}</p>
-                <p><strong>Jurisdiction:</strong> {taxRates.jurisdiction}</p>
-                <p><strong>Total tax events:</strong> {taxEvents.length}</p>
-              </div>
-            </div>
+          {/* Dynamic Tax Rates Display */}
+          <div className="mt-4">
+            <TaxRatesDisplay 
+              jurisdiction={jurisdiction}
+              year={parseInt(selectedYear)}
+              taxEventsCount={taxEvents.length}
+            />
           </div>
         </div>
 
