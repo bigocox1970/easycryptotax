@@ -2,7 +2,7 @@ export interface Transaction {
   id: string;
   user_id: string;
   file_id: string;
-  transaction_type: string;
+  transaction_type: 'buy' | 'sell' | 'withdrawal' | string;
   base_asset: string;
   quote_asset?: string;
   quantity: number;

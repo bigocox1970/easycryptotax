@@ -125,8 +125,11 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
     }
     
     // Coinbase UK format detection (your format) - check this FIRST
-    if (headers.includes('Date') && headers.includes('Transaction_Type') && headers.includes('Currency')) {
+    // Match your actual CSV format: Date,Transaction_Type,Currency,Amount_GBP,Amount_Crypto,Description
+    if (headers.includes('Date') && headers.includes('Transaction_Type') && headers.includes('Currency') && 
+        headers.includes('Amount_GBP') && headers.includes('Amount_Crypto')) {
       exchangeName = 'coinbase_uk';
+      console.log('Detected Coinbase UK format');
     }
     // Binance format detection - more specific
     else if (headers.includes('Date(UTC)') || (headers.includes('Date') && headers.includes('Pair') && headers.includes('Type'))) {
@@ -140,10 +143,11 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
     else if (headers.includes('Time') && headers.includes('Side')) {
       exchangeName = 'coinbase';
     }
-     // Coinbase UK format detection with column names (Excel fallback)
+     // Coinbase UK format detection with column names (Excel fallback) - make more specific
      else if (headers.some(h => h === 'Date' || h === 'column_0') && 
               headers.some(h => h === 'Transaction_Type' || h === 'column_1') && 
-              headers.some(h => h === 'Currency' || h === 'column_2')) {
+              headers.some(h => h === 'Currency' || h === 'column_2') &&
+              headers.some(h => h === 'Amount' || h === 'column_3')) {
        exchangeName = 'coinbase_uk';
      }
     // Generic Coinbase detection
@@ -157,10 +161,26 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
     }
     // Generic format detection for other exchanges
     else if (headers.some(h => h.toLowerCase().includes('date') || h.toLowerCase().includes('time'))) {
-      exchangeName = 'generic';
+      // Try to detect exchange from filename
+      const filenameLower = filename.toLowerCase();
+      if (filenameLower.includes('binance')) {
+        exchangeName = 'binance';
+      } else if (filenameLower.includes('coinbase')) {
+        exchangeName = 'coinbase';
+      } else if (filenameLower.includes('kraken')) {
+        exchangeName = 'kraken';
+      } else if (filenameLower.includes('bybit')) {
+        exchangeName = 'bybit';
+      } else if (filenameLower.includes('kucoin')) {
+        exchangeName = 'kucoin';
+      } else {
+        exchangeName = 'generic';
+      }
     }
     
     console.log('Detected exchange:', exchangeName);
+    console.log('File headers:', headers);
+    console.log('Filename:', filename);
 
     // Parse transactions based on detected format
     const transactions = csvData.map((row: any, index: number) => {
@@ -329,21 +349,37 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
              rowValues: Object.values(row)
            });
          
-                    // Determine if it's a buy or sell based on transaction type
+                    // Determine transaction type properly
            let transactionTypeNormalized = 'unknown';
            if (transactionType?.toLowerCase().includes('received') || transactionType?.toLowerCase().includes('buy')) {
              transactionTypeNormalized = 'buy';
-           } else if (transactionType?.toLowerCase().includes('sent') || transactionType?.toLowerCase().includes('sell') || transactionType?.toLowerCase().includes('withdrawal')) {
+           } else if (transactionType?.toLowerCase().includes('sold') || transactionType?.toLowerCase().includes('sell')) {
              transactionTypeNormalized = 'sell';
+           } else if (transactionType?.toLowerCase().includes('withdrawal')) {
+             transactionTypeNormalized = 'withdrawal'; // Separate category for fiat withdrawals
+           } else if (transactionType?.toLowerCase().includes('sent')) {
+             transactionTypeNormalized = 'sell'; // Sending crypto is a disposal
            }
          
-                    transaction = {
+                    // Calculate price based on transaction type
+           let price = null;
+           const isFiatCurrency = ['GBP', 'USD', 'EUR', 'CAD', 'AUD'].includes(currency?.toUpperCase());
+           
+           if (transactionTypeNormalized === 'withdrawal' && isFiatCurrency) {
+             // Fiat withdrawals don't have a meaningful "price"
+             price = null;
+           } else if (!isFiatCurrency && Math.abs(amountCrypto) > 0) {
+             // Cryptocurrency transactions - calculate GBP price per crypto unit
+             price = Math.abs(amountGBP) / Math.abs(amountCrypto);
+           }
+           
+           transaction = {
              ...transaction,
              transaction_date: parseDate(row['Date'] || row['column_0']),
              transaction_type: transactionTypeNormalized,
              base_asset: currency,
              quantity: Math.abs(amountCrypto),
-             price: amountGBP / Math.abs(amountCrypto) || null,
+             price: price,
              fee: null, // Coinbase UK doesn't show fees in this format
            };
          
@@ -352,7 +388,14 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
            currency,
            amountGBP,
            amountCrypto,
-           transactionTypeNormalized
+           transactionTypeNormalized,
+           finalTransaction: {
+             transaction_date: parseDate(row['Date'] || row['column_0']),
+             transaction_type: transactionTypeNormalized,
+             base_asset: currency,
+             quantity: Math.abs(amountCrypto),
+             price: price
+           }
          });
        } else if (exchangeName === 'bybit') {
         transaction = {

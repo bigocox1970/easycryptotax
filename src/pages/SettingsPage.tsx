@@ -21,6 +21,7 @@ const SettingsPage = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -45,7 +46,7 @@ const SettingsPage = () => {
             id: user.id,
             email: user.email,
             subscription_tier: 'free' as const,
-            tax_jurisdiction: 'US',
+            tax_jurisdiction: 'UK',
             accounting_method: 'FIFO' as const
           };
           
@@ -92,6 +93,48 @@ const SettingsPage = () => {
       toast.error('Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleClearAllData = async () => {
+    if (!user) return;
+
+    const confirmed = window.confirm(
+      'Are you sure you want to clear ALL data? This will permanently delete:\n\n' +
+      '• All uploaded transaction files\n' +
+      '• All processed transactions\n' +
+      '• All calculated tax events\n' +
+      '• All tax reports\n\n' +
+      'This action cannot be undone. You will need to re-upload your CSV files.'
+    );
+
+    if (!confirmed) return;
+
+    setClearing(true);
+    try {
+      // Delete user-specific data in correct order to handle foreign key constraints
+      const userTables = ['tax_events', 'transactions', 'uploaded_files'];
+      
+      for (const table of userTables) {
+        console.log(`Clearing ${table} for user ${user.id}`);
+        const { error, count } = await supabase
+          .from(table)
+          .delete()
+          .eq('user_id', user.id);
+        
+        if (error) {
+          console.error(`Error deleting from ${table}:`, error);
+          throw error;
+        }
+        console.log(`Deleted ${count || 0} records from ${table}`);
+      }
+      
+      toast.success('All data cleared successfully. You can now re-upload your files.');
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      toast.error('Failed to clear all data. Please try again.');
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -168,6 +211,9 @@ const SettingsPage = () => {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="jurisdiction">Tax Jurisdiction</Label>
+                <p className="text-sm text-muted-foreground">
+                  Currently supporting UK only. Other countries will be added as we obtain developer access to their tax APIs.
+                </p>
                 <Select
                   value={profile?.tax_jurisdiction || 'UK'}
                   onValueChange={(value) => setProfile(prev => prev ? { ...prev, tax_jurisdiction: value } : null)}
@@ -177,18 +223,18 @@ const SettingsPage = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="UK">United Kingdom</SelectItem>
-                    <SelectItem value="US">United States</SelectItem>
-                    <SelectItem value="CA">Canada</SelectItem>
-                    <SelectItem value="AU">Australia</SelectItem>
-                    <SelectItem value="DE">Germany</SelectItem>
-                    <SelectItem value="FR">France</SelectItem>
-                    <SelectItem value="NL">Netherlands</SelectItem>
-                    <SelectItem value="SE">Sweden</SelectItem>
-                    <SelectItem value="NO">Norway</SelectItem>
-                    <SelectItem value="DK">Denmark</SelectItem>
-                    <SelectItem value="FI">Finland</SelectItem>
-                    <SelectItem value="CH">Switzerland</SelectItem>
-                    <SelectItem value="OTHER">Other</SelectItem>
+                    <SelectItem value="US" disabled>United States (Coming Soon)</SelectItem>
+                    <SelectItem value="CA" disabled>Canada (Coming Soon)</SelectItem>
+                    <SelectItem value="AU" disabled>Australia (Coming Soon)</SelectItem>
+                    <SelectItem value="DE" disabled>Germany (Coming Soon)</SelectItem>
+                    <SelectItem value="FR" disabled>France (Coming Soon)</SelectItem>
+                    <SelectItem value="NL" disabled>Netherlands (Coming Soon)</SelectItem>
+                    <SelectItem value="SE" disabled>Sweden (Coming Soon)</SelectItem>
+                    <SelectItem value="NO" disabled>Norway (Coming Soon)</SelectItem>
+                    <SelectItem value="DK" disabled>Denmark (Coming Soon)</SelectItem>
+                    <SelectItem value="FI" disabled>Finland (Coming Soon)</SelectItem>
+                    <SelectItem value="CH" disabled>Switzerland (Coming Soon)</SelectItem>
+                    <SelectItem value="OTHER" disabled>Other (Coming Soon)</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-muted-foreground">
@@ -308,7 +354,13 @@ const SettingsPage = () => {
                       Permanently delete all transactions and calculations
                     </p>
                   </div>
-                  <Button variant="destructive">Clear Data</Button>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleClearAllData}
+                    disabled={clearing}
+                  >
+                    {clearing ? 'Clearing...' : 'Clear Data'}
+                  </Button>
                 </div>
               </div>
             </CardContent>

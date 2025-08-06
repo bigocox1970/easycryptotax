@@ -11,7 +11,11 @@
     "preview": "vite preview",
     "test:tax-data": "tsx src/test-tax-data.ts",
     "test:quick": "tsx -e \"import('./src/lib/tax-data-simple-test').then(m => m.simpleTaxDataTester.runSimpleTest())\"",
-    "test:scraping": "tsx -e \"import('./src/lib/tax-data-simple-test').then(m => m.simpleTaxDataTester.testScraping())\""
+    "test:scraping": "tsx -e \"import('./src/lib/tax-data-simple-test').then(m => m.simpleTaxDataTester.testScraping())\"",
+    "test:tax-reporting": "tsx src/test/tax-reporting.test.ts",
+    "test:hmrc-api": "tsx -e \"import('./src/test/tax-reporting.test').then(m => m.taxReportingValidator.testHMRCIntegration())\"",
+    "validate:2022-report": "tsx src/test/validate-2022-report.test.ts",
+    "test:2022-fixes": "tsx src/test/validate-2022-xrp-fixes.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

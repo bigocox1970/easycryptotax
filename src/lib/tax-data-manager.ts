@@ -97,9 +97,28 @@ class TaxDataManager {
         .single();
 
       if (error || !data) {
-        // If not in database, fetch fresh data
-        await this.updateCountryTaxData(countryCode);
-        return this.getCountryTaxData(countryCode, year);
+        // If not in database, try to fetch fresh data once
+        console.log(`No data found for ${countryCode} ${year}, attempting to fetch...`);
+        try {
+          await this.updateCountryTaxData(countryCode);
+          // Try to get the data again after updating
+          const { data: newData, error: newError } = await supabase
+            .from('tax_data')
+            .select('*')
+            .eq('country', countryCode)
+            .eq('year', year)
+            .single();
+          
+          if (newError || !newData) {
+            console.log(`Failed to fetch data for ${countryCode} ${year}, using fallback`);
+            return this.getFallbackTaxData(countryCode, year);
+          }
+          
+          return this.parseTaxData(newData);
+        } catch (updateError) {
+          console.error(`Failed to update tax data for ${countryCode}:`, updateError);
+          return this.getFallbackTaxData(countryCode, year);
+        }
       }
 
       // Check if data is stale (older than 24 hours)
@@ -107,8 +126,10 @@ class TaxDataManager {
       const isStale = Date.now() - lastUpdated.getTime() > this.UPDATE_INTERVAL;
 
       if (isStale) {
-        // Update in background
-        this.updateCountryTaxData(countryCode);
+        // Update in background without blocking
+        this.updateCountryTaxData(countryCode).catch(error => {
+          console.error(`Background update failed for ${countryCode}:`, error);
+        });
       }
 
       return this.parseTaxData(data);

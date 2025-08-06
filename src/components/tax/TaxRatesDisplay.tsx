@@ -3,9 +3,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ExternalLink, RefreshCw, Info, Globe, TrendingUp, Calendar, DollarSign } from 'lucide-react';
-import { taxDataManager } from '@/lib/tax-data-manager';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
+import { ExternalLink, RefreshCw, Info, Globe, TrendingUp, DollarSign } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import InfoTooltip from '@/components/ui/info-tooltip';
+import { updateTaxRatesFromClient } from '@/lib/hmrc-api-client';
 
 interface TaxRatesDisplayProps {
   jurisdiction: string;
@@ -27,28 +30,135 @@ interface TaxAllowanceInfo {
   type: string;
 }
 
+interface TaxData {
+  country: string;
+  year: number;
+  rates: TaxRateInfo[];
+  allowances: TaxAllowanceInfo[];
+  rules: Record<string, unknown>;
+  lastUpdated: Date;
+  source: string;
+}
+
 const TaxRatesDisplay: React.FC<TaxRatesDisplayProps> = ({ 
   jurisdiction, 
   year, 
   taxEventsCount,
   onRefresh 
 }) => {
-  const [taxData, setTaxData] = useState<any>(null);
+  const [taxData, setTaxData] = useState<TaxData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
 
   const fetchTaxData = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      const data = await taxDataManager.getCountryTaxData(jurisdiction, year);
-      setTaxData(data);
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError('Failed to load tax data');
-      console.error('Error fetching tax data:', err);
+      // First, try to get data from the database
+      const { data, error: dbError } = await supabase
+        .from('tax_data' as never)
+        .select('country, year, rates, allowances, rules, source, last_updated')
+        .eq('country', jurisdiction)
+        .eq('year', year)
+        .maybeSingle();
+
+      if (dbError || !data) {
+        // No data in database, try to fetch from API and insert
+        console.log(`No tax data for ${jurisdiction} ${year} in database, fetching from API...`);
+        
+        try {
+          // Import the API client dynamically to avoid circular dependencies
+          const { HMRCAPIClient } = await import('@/lib/hmrc-api-client');
+          const client = new HMRCAPIClient('');
+          
+          // Fetch data from our API (which uses fallback data)
+          const rates = await client.fetchCapitalGainsRates(year.toString());
+          const allowances = await client.fetchAllowances(year.toString());
+          
+          // Insert the fetched data into the database
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: insertError } = await supabase
+            .from('tax_data' as never)
+            .upsert({
+              country: jurisdiction,
+              year: year,
+              rates: rates,
+              allowances: allowances,
+              rules: {
+                sameDayRule: true,
+                bedAndBreakfastRule: true,
+                washSaleRule: false,
+                holdingPeriodDays: 30,
+                source: 'HMRC',
+                lastUpdated: new Date().toISOString()
+              },
+              source: 'HMRC',
+              last_updated: new Date().toISOString()
+            } as any);
+
+          if (insertError) {
+            console.error('Error inserting tax data:', insertError);
+            setError(`Failed to save tax data for ${jurisdiction} ${year}`);
+            setTaxData(null);
+            return;
+          }
+
+          // Now fetch the data again from the database
+          const { data: newData, error: newDbError } = await supabase
+            .from('tax_data' as never)
+            .select('country, year, rates, allowances, rules, source, last_updated')
+            .eq('country', jurisdiction)
+            .eq('year', year)
+            .maybeSingle();
+
+          if (newDbError || !newData) {
+            setError(`Failed to retrieve saved tax data for ${jurisdiction} ${year}`);
+            setTaxData(null);
+            return;
+          }
+
+          // Parse and set the data
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const taxData = newData as any;
+          const parsedData: TaxData = {
+            country: taxData.country,
+            year: taxData.year,
+            rates: taxData.rates || [],
+            allowances: taxData.allowances || [],
+            rules: taxData.rules || {},
+            lastUpdated: new Date(taxData.last_updated),
+            source: taxData.source
+          };
+          setTaxData(parsedData);
+          
+        } catch (apiError) {
+          console.error('Error fetching from API:', apiError);
+          setError(`No tax data available for ${jurisdiction} ${year}`);
+          setTaxData(null);
+        }
+      } else {
+        // Data exists in database, parse and display it
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const taxData = data as any;
+        const parsedData: TaxData = {
+          country: taxData.country,
+          year: taxData.year,
+          rates: taxData.rates || [],
+          allowances: taxData.allowances || [],
+          rules: taxData.rules || {},
+          lastUpdated: new Date(taxData.last_updated),
+          source: taxData.source
+        };
+        setTaxData(parsedData);
+      }
+    } catch (error) {
+      console.error('Error fetching tax data:', error);
+      setError('Failed to fetch tax data');
+      setTaxData(null);
     } finally {
       setLoading(false);
     }
@@ -57,6 +167,38 @@ const TaxRatesDisplay: React.FC<TaxRatesDisplayProps> = ({
   useEffect(() => {
     fetchTaxData();
   }, [jurisdiction, year]);
+
+  const handleManualUpdate = async () => {
+    setShowUpdateDialog(true);
+    setUpdateProgress(0);
+    setUpdating(true);
+    
+    // Simulate progress over 2 seconds
+    const progressInterval = setInterval(() => {
+      setUpdateProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(progressInterval);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 200); // 200ms intervals for 2 seconds total
+    
+    try {
+      await updateTaxRatesFromClient();
+      await fetchTaxData(); // Refresh the display
+    } catch (error) {
+      console.error('Error updating tax rates:', error);
+      setError('Failed to update tax rates from HMRC');
+    } finally {
+      setUpdating(false);
+      // Close dialog after 2 seconds
+      setTimeout(() => {
+        setShowUpdateDialog(false);
+        setUpdateProgress(0);
+      }, 2000);
+    }
+  };
 
   const getGovernmentSourceUrl = (country: string) => {
     const sources: { [key: string]: string } = {
@@ -119,47 +261,93 @@ const TaxRatesDisplay: React.FC<TaxRatesDisplayProps> = ({
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Tax Rates ({jurisdiction})
-            <InfoTooltip content={`Current tax rates for ${jurisdiction} from official government sources. Data is automatically updated every 24 hours.`} />
-          </CardTitle>
-          <CardDescription>
-            Loading latest tax information...
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center py-8">
-            <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        </CardContent>
-      </Card>
+      <>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Tax Rates ({jurisdiction})
+              <InfoTooltip content={`Current tax rates for ${jurisdiction} from official government sources. Data is automatically updated every 24 hours.`} />
+            </CardTitle>
+            <CardDescription>
+              Loading latest tax information...
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Update Progress Dialog */}
+        <Dialog open={showUpdateDialog} onOpenChange={setShowUpdateDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5 animate-spin" />
+                Fetching Latest Tax Data
+              </DialogTitle>
+              <DialogDescription>
+                Updating tax rates and allowances from HMRC...
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Progress value={updateProgress} className="w-full" />
+              <p className="text-sm text-muted-foreground text-center">
+                {updateProgress}% complete
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 
   if (error || !taxData) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Tax Rates ({jurisdiction})
-          </CardTitle>
-          <CardDescription>
-            Unable to load current tax rates
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              {error || 'Tax data not available. Using fallback rates.'}
-            </AlertDescription>
-          </Alert>
-        </CardContent>
-      </Card>
+      <>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Tax Rates ({jurisdiction})
+            </CardTitle>
+            <CardDescription>
+              Unable to load current tax rates
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                {error || 'Tax data not available for this jurisdiction and year.'}
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+
+        {/* Update Progress Dialog */}
+        <Dialog open={showUpdateDialog} onOpenChange={setShowUpdateDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5 animate-spin" />
+                Fetching Latest Tax Data
+              </DialogTitle>
+              <DialogDescription>
+                Updating tax rates and allowances from HMRC...
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Progress value={updateProgress} className="w-full" />
+              <p className="text-sm text-muted-foreground text-center">
+                {updateProgress}% complete
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 
@@ -175,129 +363,133 @@ const TaxRatesDisplay: React.FC<TaxRatesDisplayProps> = ({
   const sourceName = getSourceName(jurisdiction);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            <CardTitle>Tax Rates ({jurisdiction})</CardTitle>
-            <InfoTooltip content={`Current tax rates for ${jurisdiction} from official government sources. Data is automatically updated every 24 hours.`} />
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              {taxData.source}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={fetchTaxData}
-              disabled={loading}
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
-        <CardDescription>
-          Capital gains tax rates and allowances for {year}
-          {lastUpdated && (
-            <span className="block text-xs text-muted-foreground mt-1">
-              Last updated: {formatDate(lastUpdated)}
-            </span>
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Tax Rates */}
-          <div>
-            <h4 className="font-semibold mb-3 flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Tax Rates
-            </h4>
-            <div className="space-y-2">
-              {capitalGainsRates.map((rate: TaxRateInfo, index: number) => (
-                <div key={index} className="flex justify-between items-center p-2 bg-muted rounded">
-                  <span className="text-sm">
-                    {rate.threshold === 0 ? 'Basic Rate' : 
-                     rate.threshold ? `Above ${formatCurrency(rate.threshold, rate.currency || 'GBP')}` : 
-                     'Standard Rate'}
-                  </span>
-                  <Badge variant="secondary" className="font-mono">
-                    {rate.rate}%
-                  </Badge>
-                </div>
-              ))}
-              {capitalGainsRates.length === 0 && (
-                <p className="text-sm text-muted-foreground">No rate information available</p>
-              )}
-            </div>
-          </div>
-
-          {/* Allowances and Info */}
-          <div>
-            <h4 className="font-semibold mb-3 flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Allowances & Info
-            </h4>
-            <div className="space-y-3">
-              {capitalGainsAllowance && (
-                <div className="flex justify-between items-center p-2 bg-muted rounded">
-                  <span className="text-sm">Annual Allowance</span>
-                  <span className="font-semibold">
-                    {formatCurrency(capitalGainsAllowance.amount, capitalGainsAllowance.currency)}
-                  </span>
-                </div>
-              )}
-              
-              <div className="flex justify-between items-center p-2 bg-muted rounded">
-                <span className="text-sm">Currency</span>
-                <span className="font-semibold">{taxData.currency || 'GBP'}</span>
-              </div>
-              
-              <div className="flex justify-between items-center p-2 bg-muted rounded">
-                <span className="text-sm">Tax Events</span>
-                <span className="font-semibold">{taxEventsCount}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Government Source Link */}
-        <div className="mt-6 pt-4 border-t">
+    <>
+      <Card>
+        <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">
-                Source: {sourceName}
-              </span>
+              <Globe className="h-5 w-5" />
+              <CardTitle>Tax Rates ({jurisdiction})</CardTitle>
+              <InfoTooltip content={`Current tax rates for ${jurisdiction} from official government sources. Data is automatically updated every 24 hours.`} />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              asChild
-            >
-              <a 
-                href={sourceUrl} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
+            {jurisdiction === 'UK' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManualUpdate}
+                disabled={updating}
+                title="Update from HMRC API"
               >
-                <span>View Official Rates</span>
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </Button>
+                <RefreshCw className={`h-4 w-4 ${updating ? 'animate-spin' : ''}`} />
+                <span className="ml-1 text-xs">HMRC</span>
+              </Button>
+            )}
           </div>
-        </div>
+          <CardDescription>
+            Official tax rates for UK.{' '}
+            <a 
+              href="https://www.gov.uk/capital-gains-tax/rates" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-primary hover:underline"
+            >
+              View official rates →
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Tax Rates */}
+            <div>
+              <h4 className="font-semibold mb-3 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Capital Gains Tax Rates
+              </h4>
+              {capitalGainsRates.length > 0 ? (
+                <div className="space-y-2">
+                  {capitalGainsRates.map((rate, index) => (
+                    <div key={index} className="flex justify-between items-center p-2 bg-muted rounded">
+                      <span className="text-sm">
+                        {rate.threshold ? `${formatCurrency(rate.threshold, 'GBP')}+` : 'All gains'}
+                      </span>
+                      <Badge variant="secondary">{rate.rate}%</Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">No rate information available</p>
+              )}
+            </div>
 
-        {/* Disclaimer */}
-        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
-          <p className="text-xs text-muted-foreground">
-            ⚠️ This information is for educational purposes only. Always verify with qualified tax professionals before filing returns. 
-            Rates are automatically updated from government sources but may not reflect the most recent changes.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
+            {/* Allowances */}
+            <div>
+              <h4 className="font-semibold mb-3 flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Annual Allowances
+              </h4>
+              {capitalGainsAllowance ? (
+                <div className="p-3 bg-muted rounded">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">Capital Gains Allowance</span>
+                    <span className="font-semibold">
+                      {formatCurrency(capitalGainsAllowance.amount, capitalGainsAllowance.currency)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">No allowance information available</p>
+              )}
+            </div>
+          </div>
+
+          {/* Additional Info */}
+          <div className="mt-6 pt-4 border-t">
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <div className="flex items-center gap-4">
+                <span>Total tax events: {taxEventsCount}</span>
+                <span>Last updated: {formatDate(taxData.lastUpdated)}</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+              >
+                <a href={sourceUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3 w-3 mr-1" />
+                  {sourceName}
+                </a>
+              </Button>
+            </div>
+          </div>
+
+          {/* Disclaimer */}
+          <div className="mt-4 p-3 bg-muted/50 rounded text-xs text-muted-foreground">
+            <strong>Disclaimer:</strong> This information is for reference only. Please consult with a qualified tax professional for your specific situation. Tax rates and rules may change.
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Update Progress Dialog */}
+      <Dialog open={showUpdateDialog} onOpenChange={setShowUpdateDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+              Fetching Latest Tax Data
+            </DialogTitle>
+            <DialogDescription>
+              Updating tax rates and allowances from HMRC...
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Progress value={updateProgress} className="w-full" />
+            <p className="text-sm text-muted-foreground text-center">
+              {updateProgress}% complete
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
