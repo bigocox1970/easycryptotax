@@ -1,0 +1,5 @@
+Date,Transaction_Type,Currency,Amount_of_Currency,Amount_of_Description,Description
+18/03/2024,Received,BTC,0.0148,780.83,Received BTC
+29/04/2024,Withdraw,GBP,-2.00,-2.00,Withdrew funds
+13/12/2024,Sold,BTC,-0.000126,-10.00,Sold BTC
+13/12/2024,Withdraw,GBP,-9.00,-9.00,Withdrew funds 

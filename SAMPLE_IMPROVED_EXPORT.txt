@@ -1,0 +1,50 @@
+========================================================================================================================
+UK CAPITAL GAINS TAX REPORT - TAX YEAR 2024                                                                           
+Generated: 06/08/2025 at 15:30:25                                                                                      
+Prepared by: EasyCryptoTax (Educational Use Only)                                                                      
+========================================================================================================================
+
+EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+Tax Year: 2024                         Jurisdiction: UK                        
+Total Transactions: 3                  Taxable Events: 0                      
+Capital Gains Allowance: £3,000        Estimated Tax Due: £0.00               
+
+REPORT STATUS: NO TAXABLE EVENTS
+================================================================================
+
+EXPLANATION:
+No cryptocurrency disposals occurred in 2024 that would create taxable events.                                         
+This is perfectly normal and compliant with UK tax requirements.                                                       
+
+REASON ANALYSIS:
+• Cryptocurrency purchases: 1 (Not taxable - builds cost basis for future sales)                                       
+• Cryptocurrency sales/disposals: 0 (These would be taxable events)                                                    
+• Fiat currency withdrawals: 2 (Not taxable - moving your own money)                                                   
+
+UK TAX POSITION:
+• Capital Gains Tax liability: £0.00 (No disposals occurred)                                                           
+• Annual allowance used: £0 of £3,000 (£3,000 remaining)                                                              
+• HMRC reporting requirement: No Self Assessment entry needed for this year                                            
+
+COST BASIS BUILDING:
+Your 1 purchase(s) establish cost basis for future tax calculations.                                                   
+When you eventually sell these assets, gains/losses will be calculated from these purchase prices.                    
+
+DETAILED TRANSACTIONS
+========================================================================================================================
+ALL TRANSACTIONS FOR 2024
+------------------------------------------------------------------------------------------------------------------------
+Type      Asset       Date           Time      Quantity          Price (GBP)    Total (GBP)    Exchange            
+------------------------------------------------------------------------------------------------------------------------
+BUY       BTC         18/03/2024     00:00     0.01480000        52758.78       780.83         coinbase_uk         
+SELL      GBP         29/04/2024     01:00     2.00000000        1.00           2.00           coinbase_uk         
+SELL      GBP         13/12/2024     00:00     9.00000000        1.00           9.00           coinbase_uk         
+
+========================================================================================================================
+IMPORTANT DISCLAIMERS
+• This report is for educational and informational purposes only                                                        
+• Always consult with a qualified tax professional for official tax advice                                             
+• Verify all calculations independently before filing with HMRC                                                        
+• UK tax rules are complex and may have additional requirements not covered here                                       
+========================================================================================================================

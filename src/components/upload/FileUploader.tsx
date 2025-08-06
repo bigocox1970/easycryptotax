@@ -124,9 +124,23 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
       }
     }
     
-    // Coinbase UK format detection (your format) - check this FIRST
+    // Swissborg format detection - check this FIRST
+    // Check for proper headers first
+    if (headers.includes('Local time') && headers.includes('Type') && headers.includes('Currency') && 
+        headers.includes('Gross amount') && headers.includes('Gross amount (GBP)')) {
+      exchangeName = 'swissborg';
+      console.log('Detected Swissborg format (proper headers)');
+    }
+    // Check for malformed Swissborg headers (CSV parsing issues)
+    else if (headers.some(h => h.includes('SwissBorg')) && 
+             headers.includes('_1') && headers.includes('Name') && 
+             (headers.includes('Christopher Cox') || headers.some(h => h.includes('Cox')))) {
+      exchangeName = 'swissborg_malformed';
+      console.log('Detected Swissborg format (malformed headers)');
+    }
+    // Coinbase UK format detection (your format) - check this SECOND
     // Match your actual CSV format: Date,Transaction_Type,Currency,Amount_GBP,Amount_Crypto,Description
-    if (headers.includes('Date') && headers.includes('Transaction_Type') && headers.includes('Currency') && 
+    else if (headers.includes('Date') && headers.includes('Transaction_Type') && headers.includes('Currency') && 
         headers.includes('Amount_GBP') && headers.includes('Amount_Crypto')) {
       exchangeName = 'coinbase_uk';
       console.log('Detected Coinbase UK format');
@@ -173,6 +187,8 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
         exchangeName = 'bybit';
       } else if (filenameLower.includes('kucoin')) {
         exchangeName = 'kucoin';
+      } else if (filenameLower.includes('swissborg') || filenameLower.includes('account_statement')) {
+        exchangeName = 'swissborg_malformed';
       } else {
         exchangeName = 'generic';
       }
@@ -288,7 +304,147 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
       };
 
       // Parse based on exchange format
-      if (exchangeName === 'binance') {
+      if (exchangeName === 'swissborg' || exchangeName === 'swissborg_malformed') {
+        // Parse Swissborg format - handle both proper and malformed headers
+        let transactionType, currency, grossAmount, grossAmountGBP, fee, feeGBP, netAmount, netAmountGBP, localTime;
+        
+        if (exchangeName === 'swissborg_malformed') {
+          // For malformed headers, map based on known positions
+          // Based on error: SwissBorg Solutions O�: date, "": utc_date, _1: type, Name: currency, Christopher Cox: gross_amount, etc.
+          const headerKeys = Object.keys(row);
+          const dateKey = headerKeys.find(k => k.includes('SwissBorg'));
+          const typeKey = '_1';
+          const currencyKey = 'Name';
+          const grossAmountKey = 'Christopher Cox';
+          
+          // Look for more keys by position or pattern
+          const values = Object.values(row);
+          
+          localTime = row[dateKey] || '';
+          transactionType = row[typeKey] || '';
+          currency = row[currencyKey] || '';
+          grossAmount = parseFloat(row[grossAmountKey]) || 0;
+          
+          // Try to find GBP amount - it's usually after the gross amount
+          const grossAmountIndex = headerKeys.indexOf(grossAmountKey);
+          const gbpAmountKey = headerKeys[grossAmountIndex + 1];
+          grossAmountGBP = parseFloat(row[gbpAmountKey]) || 0;
+          
+          // Estimate fee and net amounts - they come later in the CSV
+          fee = 0; // Will need to be extracted from later columns
+          feeGBP = 0;
+          netAmount = grossAmount; // Approximation
+          netAmountGBP = grossAmountGBP; // Approximation
+          
+          console.log('Swissborg malformed parsing:', {
+            dateKey,
+            typeKey,
+            currencyKey,
+            grossAmountKey,
+            gbpAmountKey,
+            headerKeys,
+            values,
+            localTime,
+            transactionType,
+            currency,
+            grossAmount,
+            grossAmountGBP
+          });
+        } else {
+          // Normal Swissborg parsing
+          localTime = row['Local time'];
+          transactionType = row['Type'];
+          currency = row['Currency'];
+          grossAmount = parseFloat(row['Gross amount']) || 0;
+          grossAmountGBP = parseFloat(row['Gross amount (GBP)']) || 0;
+          fee = parseFloat(row['Fee']) || 0;
+          feeGBP = parseFloat(row['Fee (GBP)']) || 0;
+          netAmount = parseFloat(row['Net amount']) || 0;
+          netAmountGBP = parseFloat(row['Net amount (GBP)']) || 0;
+        }
+        
+        console.log('Swissborg field mapping:', {
+          transactionType,
+          currency,
+          grossAmount,
+          grossAmountGBP,
+          fee,
+          feeGBP,
+          netAmount,
+          netAmountGBP,
+          note: row['Note']
+        });
+        
+        // Determine transaction type properly
+        let transactionTypeNormalized = 'unknown';
+        if (transactionType?.toLowerCase() === 'deposit') {
+          transactionTypeNormalized = 'buy'; // Deposit is acquisition
+        } else if (transactionType?.toLowerCase() === 'sell') {
+          transactionTypeNormalized = 'sell'; // Sell is disposal
+        } else if (transactionType?.toLowerCase() === 'buy') {
+          // Skip GBP buys as they're part of exchange pairs
+          if (currency?.toUpperCase() === 'GBP') {
+            transactionTypeNormalized = 'skip'; // Mark for filtering out
+          } else {
+            transactionTypeNormalized = 'buy';
+          }
+        } else if (transactionType?.toLowerCase() === 'withdrawal') {
+          const isFiatCurrency = ['GBP', 'USD', 'EUR', 'CAD', 'AUD'].includes(currency?.toUpperCase());
+          if (isFiatCurrency) {
+            transactionTypeNormalized = 'withdrawal'; // Fiat withdrawal
+          } else {
+            transactionTypeNormalized = 'sell'; // Crypto withdrawal is disposal
+          }
+        }
+        
+        // Calculate price based on transaction type
+        let price = null;
+        let quantity = 0;
+        const isFiatCurrency = ['GBP', 'USD', 'EUR', 'CAD', 'AUD'].includes(currency?.toUpperCase());
+        
+        if (transactionTypeNormalized === 'skip') {
+          // Skip this transaction
+          return null;
+        } else if (transactionTypeNormalized === 'withdrawal' && isFiatCurrency) {
+          // Fiat withdrawals - use net amount as quantity, no meaningful price
+          quantity = Math.abs(netAmount);
+          price = null;
+        } else if (!isFiatCurrency && Math.abs(grossAmount) > 0 && grossAmountGBP > 0) {
+          // Cryptocurrency transactions - calculate GBP price per crypto unit
+          quantity = Math.abs(grossAmount);
+          price = grossAmountGBP / Math.abs(grossAmount);
+        } else if (isFiatCurrency) {
+          // GBP transactions
+          quantity = Math.abs(grossAmount);
+          price = 1.00; // GBP to GBP rate
+        }
+        
+        transaction = {
+          ...transaction,
+          transaction_date: parseDate(localTime),
+          transaction_type: transactionTypeNormalized,
+          base_asset: currency,
+          quantity: quantity,
+          price: price,
+          fee: feeGBP || fee,
+        };
+        
+        console.log('Swissborg parsing result:', {
+          transactionType,
+          currency,
+          grossAmount,
+          grossAmountGBP,
+          transactionTypeNormalized,
+          finalTransaction: {
+            transaction_date: parseDate(localTime),
+            transaction_type: transactionTypeNormalized,
+            base_asset: currency,
+            quantity: quantity,
+            price: price,
+            fee: feeGBP || fee
+          }
+        });
+      } else if (exchangeName === 'binance') {
         transaction = {
           ...transaction,
           transaction_date: parseDate(row['Date(UTC)'] || row['Date']),
@@ -445,21 +601,28 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
       return transaction;
     });
 
-         const filteredTransactions = transactions.filter(t => {
-       const isValid = t.base_asset && t.quantity && t.transaction_date && t.transaction_type !== 'unknown';
-       if (!isValid) {
-         console.warn('Filtered out transaction:', {
-           base_asset: t.base_asset,
-           quantity: t.quantity,
-           transaction_date: t.transaction_date,
-           transaction_type: t.transaction_type,
-           raw_data: t.raw_data
-         });
-         // Temporarily log the raw data to see what we're working with
-         console.log('Raw transaction data:', t.raw_data);
-       }
-       return isValid;
-     });
+    // Filter out null transactions and invalid ones
+    const filteredTransactions = transactions.filter(t => {
+      // Skip null transactions (from Swissborg 'skip' logic)
+      if (t === null) return false;
+      
+      // Skip transactions marked as 'skip'
+      if (t.transaction_type === 'skip') return false;
+      
+      const isValid = t.base_asset && t.quantity && t.transaction_date && t.transaction_type !== 'unknown';
+      if (!isValid) {
+        console.warn('Filtered out transaction:', {
+          base_asset: t.base_asset,
+          quantity: t.quantity,
+          transaction_date: t.transaction_date,
+          transaction_type: t.transaction_type,
+          raw_data: t.raw_data
+        });
+        // Temporarily log the raw data to see what we're working with
+        console.log('Raw transaction data:', t.raw_data);
+      }
+      return isValid;
+    });
     
     console.log('Total transactions parsed:', transactions.length);
     console.log('Filtered transactions:', filteredTransactions.length);
@@ -833,6 +996,7 @@ const FileUploader = ({ onFilesProcessed }: FileUploadProps) => {
                 <p className="text-lg mb-2">Drag & drop files here, or click to select</p>
                                  <p className="text-sm text-muted-foreground mb-4">CSV, XLS, and XLSX files supported</p>
                  <p className="text-xs text-muted-foreground mb-4">✨ Automatic date format detection for international formats</p>
+                 <p className="text-xs text-muted-foreground mb-4">🔄 Supports: Coinbase, Binance, Bybit, Swissborg, Kraken, KuCoin + Generic formats</p>
                 
                 {/* File Requirements */}
                 <div className="mt-6 pt-6 border-t border-muted-foreground/20">
